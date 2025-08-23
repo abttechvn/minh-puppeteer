@@ -60,51 +60,73 @@ async function fetchVideoLinks(channelUrl, options = {}) {
         // Check for verification page and wait for manual resolution
         console.log('🔐 Checking for verification...');
         try {
+            // Wait a moment for the page to fully load
+            await new Promise(r => setTimeout(r, 3000));
+            
+            // Check if verification iframe exists
             const verificationIframe = await page.$('#root > iframe');
+            
             if (verificationIframe) {
                 console.log('🚨 VERIFICATION DETECTED!');
                 console.log('========================================');
                 console.log('⏳ Please solve the verification manually.');
-                console.log('📋 The script will wait and automatically continue once verification is complete.');
-                console.log('🔍 Waiting for verification to be resolved...');
+                console.log('📋 The script will automatically continue once you complete it.');
+                console.log('🔍 Monitoring for completion...');
                 
-                // Wait for the verification iframe to disappear
+                // Wait for verification to be completed manually
                 await page.waitForFunction(
                     () => {
+                        // Check if iframe is gone AND channel elements are visible
                         const iframe = document.querySelector('#root > iframe');
-                        return !iframe; // Continue when iframe is gone
+                        const channelElement = document.querySelector('#user_detail_element');
+                        return !iframe && channelElement;
                     },
-                    { timeout: 300000 } // 5 minutes timeout for manual verification
+                    { 
+                        timeout: 300000, // 5 minutes timeout
+                        polling: 2000    // Check every 2 seconds
+                    }
                 );
                 
                 console.log('✅ Verification completed! Continuing with data extraction...');
                 
-                // Wait a bit more for the page to fully load after verification
+                // Wait for page to stabilize after verification
                 await new Promise(r => setTimeout(r, 3000));
+                
             } else {
                 console.log('✅ No verification required, proceeding...');
             }
+            
         } catch (error) {
             if (error.name === 'TimeoutError') {
                 console.log('⏰ Verification timeout (5 minutes). Please complete verification and restart the script.');
                 throw new Error('Verification timeout - please complete verification and try again');
             } else {
                 console.log('⚠️ Error checking for verification, continuing anyway...');
+                console.log(`   Error: ${error.message}`);
             }
         }
         
         // Extract channel information first
         console.log('📝 Extracting channel information...');
         
-        // First, hover over the description element to reveal the full description BEFORE extracting data
+        // Hover over description and wait for full expansion
         try {
             const descriptionHoverSelector = '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > div.lFECd241 > div > div > span';
             const descriptionHoverElement = await page.$(descriptionHoverSelector);
             if (descriptionHoverElement) {
+                console.log('🖱️ Hovering over description to reveal full text...');
                 await descriptionHoverElement.hover();
-                console.log('🖱️ Hovered over description to reveal full text...');
-                // Wait a moment for the description to fully load
-                await new Promise(r => setTimeout(r, 1000));
+                
+                // Wait longer and monitor for DOM changes
+                console.log('⏳ Waiting for description expansion...');
+                await new Promise(r => setTimeout(r, 4000)); // Wait 4 seconds for expansion
+                
+                // Additional wait to ensure DOM has fully updated
+                await page.waitForTimeout(2000);
+                
+                console.log('✅ Description expansion wait completed');
+            } else {
+                console.log('ℹ️ No hover element found - description may be short or use different layout');
             }
         } catch (error) {
             console.log('⚠️ Could not hover over description element, continuing...');
@@ -181,48 +203,210 @@ async function fetchVideoLinks(channelUrl, options = {}) {
                 heartsCount = heartsElement.textContent.trim();
             }
             
-            // Get IP location using the specific selector
+            // Get IP location using the specific selector (may not exist for all channels)
             const ipLocationElement = document.querySelector(ipLocationSelector);
             if (ipLocationElement && ipLocationElement.textContent.trim()) {
                 ipLocation = ipLocationElement.textContent.trim();
             }
             
-            // Get additional data (these may or may not be present)
-            const additionalData1Element = document.querySelector(additionalData1Selector);
-            if (additionalData1Element && additionalData1Element.textContent.trim()) {
-                additionalData1 = additionalData1Element.textContent.trim();
-            }
+            // COMPREHENSIVE ADDITIONAL DATA EXTRACTION
+            // Try multiple approaches to capture all possible additional data
+            let allAdditionalData = [];
             
-            const additionalData2Element = document.querySelector(additionalData2Selector);
-            if (additionalData2Element && additionalData2Element.textContent.trim()) {
-                additionalData2 = additionalData2Element.textContent.trim();
-            }
+            // Method 1: Try all known specific selectors
+            const knownSelectors = [
+                // Position-based selectors (nth-child)
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > p > span:nth-child(2) > span',
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > p > span:nth-child(3) > span',
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > p > span:nth-child(4)',
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > p > span:nth-child(5)',
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > p > span:nth-child(6)',
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > p > span:nth-child(7)',
+                // Class-based selectors (your new missing one!)
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > p > span.YcpSmZeQ > span',
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > p > span.OcCvtZ2a > span', // Channel ID container class
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > p > span.DtUnx4ER > span'  // IP location container class
+            ];
             
-            const additionalData3Element = document.querySelector(additionalData3Selector);
-            if (additionalData3Element && additionalData3Element.textContent.trim()) {
-                additionalData3 = additionalData3Element.textContent.trim();
-            }
+            knownSelectors.forEach(selector => {
+                const element = document.querySelector(selector);
+                if (element && element.textContent.trim()) {
+                    const text = element.textContent.trim();
+                    // Debug log for the specific YcpSmZeQ selector
+                    if (selector.includes('YcpSmZeQ')) {
+                        console.log(`🔍 Found YcpSmZeQ selector data: "${text}"`);
+                    }
+                    if (!allAdditionalData.includes(text)) {
+                        allAdditionalData.push(text);
+                    }
+                }
+            });
             
-            // Get page description - handle dynamic length by checking multiple span children
-            const descriptionContainer = document.querySelector(descriptionBaseSelector);
-            if (descriptionContainer) {
-                const descriptionParts = [];
-                let childIndex = 1;
+            // Method 2: Systematic extraction from the info paragraph
+            const infoContainer = document.querySelector('#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > p');
+            if (infoContainer) {
+                // Get all direct child spans
+                const directSpans = infoContainer.querySelectorAll(':scope > span');
                 
-                // Check for span:nth-child(1), span:nth-child(2), etc. until no more found
-                while (true) {
-                    const spanElement = descriptionContainer.querySelector(`span:nth-child(${childIndex}) > span > span`);
-                    if (spanElement && spanElement.textContent.trim()) {
-                        descriptionParts.push(spanElement.textContent.trim());
-                        childIndex++;
-                    } else {
+                directSpans.forEach((span, index) => {
+                    // Try the span itself
+                    const spanText = span.textContent.trim();
+                    if (spanText && 
+                        !spanText.includes('抖音号') && 
+                        !spanText.includes('：') && 
+                        spanText.length > 1 &&
+                        !allAdditionalData.includes(spanText)) {
+                        allAdditionalData.push(spanText);
+                    }
+                    
+                    // Try child spans within this span
+                    const childSpans = span.querySelectorAll('span');
+                    childSpans.forEach(childSpan => {
+                        const childText = childSpan.textContent.trim();
+                        if (childText && 
+                            !childText.includes('抖音号') && 
+                            !childText.includes('：') && 
+                            childText.length > 1 &&
+                            childText !== spanText && // Don't duplicate parent text
+                            !allAdditionalData.includes(childText)) {
+                            allAdditionalData.push(childText);
+                        }
+                    });
+                });
+                
+                // Method 2.5: Scan for any spans with specific class patterns that might contain data
+                const classBasedSpans = infoContainer.querySelectorAll('span[class] > span, span[class]');
+                classBasedSpans.forEach(classSpan => {
+                    const classText = classSpan.textContent.trim();
+                    if (classText && 
+                        !classText.includes('抖音号') && 
+                        !classText.includes('：') && 
+                        classText.length > 1 &&
+                        !allAdditionalData.includes(classText)) {
+                        allAdditionalData.push(classText);
+                    }
+                });
+                
+                // Also try nested combinations like span > span, span > span > span
+                const nestedSpans = infoContainer.querySelectorAll('span span');
+                nestedSpans.forEach(nestedSpan => {
+                    const nestedText = nestedSpan.textContent.trim();
+                    if (nestedText && 
+                        !nestedText.includes('抖音号') && 
+                        !nestedText.includes('：') && 
+                        nestedText.length > 1 &&
+                        !allAdditionalData.includes(nestedText)) {
+                        allAdditionalData.push(nestedText);
+                    }
+                });
+            }
+            
+            // Method 3: Filter out unwanted data and clean up
+            const filteredData = allAdditionalData.filter(text => {
+                // Remove channel ID related text
+                if (text.includes('抖音号') || text.includes('：')) return false;
+                // Remove IP location if already captured
+                if (ipLocation && text === ipLocation) return false;
+                // Allow single meaningful characters like gender (男/女), but filter out single punctuation/symbols
+                if (text.length === 1) {
+                    // Keep meaningful single characters (Chinese characters, letters)
+                    return /[\u4e00-\u9fff\w]/.test(text);
+                }
+                // Remove very short non-meaningful text
+                if (text.length < 1) return false;
+                // Remove pure numbers that might be IDs (but allow age numbers like "25岁")
+                if (/^\d+$/.test(text) && text.length > 10) return false;
+                return true;
+            });
+            
+            // Assign to variables (keep up to 3 additional data points)
+            additionalData1 = filteredData[0] || '';
+            additionalData2 = filteredData[1] || '';
+            additionalData3 = filteredData[2] || '';
+            
+            // Store all found data for debugging
+            const allFoundData = filteredData;
+            
+            // COMPREHENSIVE PAGE DESCRIPTION EXTRACTION
+            // Try multiple approaches to get the complete description
+            let allDescriptionText = '';
+            
+            // Method 1: Try to get expanded description after hover/click
+            const expandedDescriptionSelectors = [
+                // After expansion, description might be in different containers
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > div.lFECd241',
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > div.lFECd241 > div',
+                '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > div.lFECd241 > div > p'
+            ];
+            
+            // Try to get full text from expanded containers
+            for (const selector of expandedDescriptionSelectors) {
+                const container = document.querySelector(selector);
+                if (container) {
+                    const fullText = container.textContent.trim();
+                    // Only use if it's longer and doesn't contain "...更多"
+                    if (fullText && 
+                        fullText.length > allDescriptionText.length && 
+                        !fullText.includes('...更多') && 
+                        !fullText.includes('...')) {
+                        allDescriptionText = fullText;
                         break;
                     }
                 }
-                
-                // Join all description parts
-                pageDescription = descriptionParts.join(' ');
             }
+            
+            // Method 2: Try specific nested selectors for different description layouts
+            if (!allDescriptionText || allDescriptionText.includes('...')) {
+                const descriptionSelectors = [
+                    // For short descriptions
+                    '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > div.lFECd241 > span > span > span > span > span > span',
+                    // For long descriptions with dynamic parts
+                    '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > div.lFECd241 > div > p > span > span > span',
+                    // Alternative structures
+                    '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > div.lFECd241 > div > span',
+                    '#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > div.lFECd241 > span'
+                ];
+                
+                for (const selector of descriptionSelectors) {
+                    const element = document.querySelector(selector);
+                    if (element) {
+                        const text = element.textContent.trim();
+                        if (text && text.length > allDescriptionText.length) {
+                            allDescriptionText = text;
+                        }
+                    }
+                }
+            }
+            
+            // Method 3: Try dynamic span collection for complex structures
+            if (!allDescriptionText || allDescriptionText.includes('...')) {
+                const descriptionContainer = document.querySelector('#user_detail_element > div > div.a3i9GVfe.nZryJ1oM._6lTeZcQP.y5Tqsaqg > div.IGPVd8vQ > div.lFECd241');
+                if (descriptionContainer) {
+                    // Collect all text from nested spans
+                    const allSpans = descriptionContainer.querySelectorAll('span');
+                    const textParts = [];
+                    
+                    allSpans.forEach(span => {
+                        const spanText = span.textContent.trim();
+                        if (spanText && 
+                            !spanText.includes('...更多') && 
+                            !spanText.includes('...') &&
+                            spanText.length > 3 && // Avoid short meaningless text
+                            !textParts.some(part => part.includes(spanText))) { // Avoid duplicates
+                            textParts.push(spanText);
+                        }
+                    });
+                    
+                    if (textParts.length > 0) {
+                        const combinedText = textParts.join(' ');
+                        if (combinedText.length > allDescriptionText.length) {
+                            allDescriptionText = combinedText;
+                        }
+                    }
+                }
+            }
+            
+            pageDescription = allDescriptionText;
             
             return {
                 channelName: channelName,
@@ -230,10 +414,12 @@ async function fetchVideoLinks(channelUrl, options = {}) {
                 followersCount: followersCount,
                 heartsCount: heartsCount,
                 ipLocation: ipLocation,
-                additionalData1: additionalData1, // Now contains data from span:nth-child(3)
+                additionalData1: additionalData1,
                 additionalData2: additionalData2,
-                additionalData3: additionalData3, // Now contains data from span:nth-child(5)
-                pageDescription: pageDescription, // Changed from pageTitle, dynamically handles longer descriptions
+                additionalData3: additionalData3,
+                pageDescription: pageDescription,
+                // Debug info: all found additional data
+                allFoundAdditionalData: allFoundData
             };
         });
         
@@ -457,7 +643,7 @@ async function fetchVideoLinks(channelUrl, options = {}) {
 // Example usage
 (async () => {
     // 🎯 CONFIGURATION: Add your channel URL here
-    const CHANNEL_URL = 'https://www.douyin.com/user/MS4wLjABAAAAMU6OXqc-DmN8X3DRrI3sGlAI4VVtjRgQDVrK0j4_K1Jwk2xuGpC5whJ7dUv8S8Wh';
+    const CHANNEL_URL = 'https://www.douyin.com/user/MS4wLjABAAAAURQfB8k2J9F79FjWSx1eYlarHl1HTldY8Oxp7OSeJfKAn9cXj6fYIqWheS7X13Bn';
     
     const options = {
         headless: false,        // Set to true to run in background
