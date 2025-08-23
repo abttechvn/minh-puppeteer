@@ -48,59 +48,151 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
         // Wait for content to load
         await new Promise(r => setTimeout(r, 5000));
         
-        // Extract video information
+        // Extract video information with improved selectors
         console.log('📝 Extracting video information...');
         const videoInfo = await page.evaluate(() => {
-            // Your specific channel name selector
+            // Updated channel name selector
             const channelNameSelector = '#douyin-right-container > div:nth-child(2) > main > div.q3FEUHo1 > div.AaMoWpJs.KVBE0Bw6.hP0cLBah > div.GX8tdEJt > a > div > span > span > span > span > span > span';
             const channelNameElement = document.querySelector(channelNameSelector);
             const channelName = channelNameElement ? channelNameElement.textContent.trim() : 'Unknown_Channel';
             
-            // Your specific datetime selector
-            const dateTimeSelector = '#douyin-right-container > div:nth-child(2) > main > div.q3FEUHo1 > div:nth-child(2) > div > div.__VJux97 > span';
-            const dateTimeElement = document.querySelector(dateTimeSelector);
-            const dateTime = dateTimeElement ? dateTimeElement.textContent.trim() : '';
-            
-            // Extract video description and hashtags
-            let description = '';
-            let hashtags = [];
-            
-            // Common selectors for video description
-            const descriptionSelectors = [
-                '[data-e2e="video-desc"]',
-                '.video-info-detail',
-                '.video-description',
-                '.content-text',
-                '.desc-text'
+            // Enhanced datetime extraction with multiple selectors
+            let dateTime = '';
+            const dateTimeSelectors = [
+                '#douyin-right-container > div:nth-child(2) > main > div.q3FEUHo1 > div:nth-child(2) > div > div.__VJux97 > span',
+                '[data-e2e="video-publish-time"]',
+                '.publish-time',
+                // Add more potential datetime selectors
+                '#douyin-right-container span[class*="time"]',
+                '#douyin-right-container span[class*="date"]'
             ];
             
-            for (const selector of descriptionSelectors) {
+            for (const selector of dateTimeSelectors) {
                 const element = document.querySelector(selector);
                 if (element && element.textContent.trim()) {
-                    description = element.textContent.trim();
+                    dateTime = element.textContent.trim();
+                    console.log(`Found datetime using selector: ${selector} -> ${dateTime}`);
                     break;
                 }
             }
             
-            // Extract hashtags from description or specific hashtag elements
-            const hashtagElements = document.querySelectorAll('a[href*="/hashtag/"], .hashtag, [data-e2e="video-tag"]');
-            hashtagElements.forEach(element => {
-                const tagText = element.textContent.trim();
-                if (tagText.startsWith('#') || element.getAttribute('href')?.includes('/hashtag/')) {
-                    hashtags.push(tagText.startsWith('#') ? tagText : '#' + tagText);
-                }
-            });
+            if (!dateTime) {
+                console.log('No datetime found with any selector');
+            }
             
-            // Also extract hashtags from description text
-            if (description) {
-                const hashtagMatches = description.match(/#[\w\u4e00-\u9fff]+/g);
-                if (hashtagMatches) {
-                    hashtagMatches.forEach(tag => {
-                        if (!hashtags.includes(tag)) {
-                            hashtags.push(tag);
+            // Format datetime to hh:mm:ss dd/mm/yy format
+            function formatDateTime(dateString) {
+                try {
+                    let date;
+                    
+                    // Try to parse the dateString
+                    if (dateString && dateString.trim()) {
+                        // If it's already in ISO format or a recognizable format
+                        date = new Date(dateString);
+                        
+                        // If parsing failed, try current time
+                        if (isNaN(date.getTime())) {
+                            console.log(`⚠️ Could not parse datetime "${dateString}", using current time`);
+                            date = new Date();
                         }
-                    });
+                    } else {
+                        // Use current time if no datetime found
+                        date = new Date();
+                    }
+                    
+                    // Format to hh:mm:ss dd/mm/yy
+                    const hours = date.getHours().toString().padStart(2, '0');
+                    const minutes = date.getMinutes().toString().padStart(2, '0');
+                    const seconds = date.getSeconds().toString().padStart(2, '0');
+                    const day = date.getDate().toString().padStart(2, '0');
+                    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                    const year = date.getFullYear().toString().slice(-2);
+                    
+                    return `${hours}:${minutes}:${seconds} ${day}/${month}/${year}`;
+                } catch (error) {
+                    console.log(`⚠️ Error formatting datetime: ${error.message}`);
+                    // Return current time in correct format as fallback
+                    const now = new Date();
+                    const hours = now.getHours().toString().padStart(2, '0');
+                    const minutes = now.getMinutes().toString().padStart(2, '0');
+                    const seconds = now.getSeconds().toString().padStart(2, '0');
+                    const day = now.getDate().toString().padStart(2, '0');
+                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                    const year = now.getFullYear().toString().slice(-2);
+                    
+                    return `${hours}:${minutes}:${seconds} ${day}/${month}/${year}`;
                 }
+            }
+            
+            // Keep the extracted datetime as-is (don't format it)
+            
+            // FIXED DESCRIPTION EXTRACTION - Using your updated selectors
+            let description = '';
+            let hashtags = [];
+            
+            console.log('🔍 Starting description extraction...');
+            
+            // Try both possible container structures
+            const possibleBaseSelectors = [
+                // Your new structure
+                '#douyin-right-container > div:nth-child(2) > main > div.q3FEUHo1 > div:nth-child(2) > div > div.JAgvLhJN > div.BhCHsHRG > div > span > span:nth-child(2) > span',
+                // Previous structure
+                '#douyin-right-container > div:nth-child(2) > main > div.q3FEUHo1 > div:nth-child(2) > div > div.Gdai3sp4 > div > div.YklhOzZK > span > span:nth-child(2) > span'
+            ];
+            
+            let activeBaseSelector = null;
+            let parentContainer = null;
+            
+            // Find which structure is being used
+            for (const baseSelector of possibleBaseSelectors) {
+                parentContainer = document.querySelector(baseSelector);
+                if (parentContainer) {
+                    activeBaseSelector = baseSelector;
+                    console.log(`✅ Found description container using: ${baseSelector}`);
+                    break;
+                }
+            }
+            
+            if (parentContainer && activeBaseSelector) {
+                const allDescriptionParts = [];
+                const allHashtags = [];
+                
+                // Get ALL child spans under the parent
+                const allChildSpans = parentContainer.querySelectorAll(':scope > span');
+                console.log(`📝 Found ${allChildSpans.length} description parts to process`);
+                
+                allChildSpans.forEach((span, index) => {
+                    const childIndex = index + 1; // nth-child is 1-based
+                    
+                    // Check if this span contains a hashtag link
+                    const hashtagLink = span.querySelector('a[href*="/hashtag/"]');
+                    if (hashtagLink) {
+                        const hashtag = hashtagLink.textContent.trim();
+                        if (hashtag && !allHashtags.includes(hashtag)) {
+                            allHashtags.push(hashtag.startsWith('#') ? hashtag : '#' + hashtag);
+                            console.log(`🏷️ Found hashtag ${childIndex}: ${hashtag}`);
+                        }
+                    } else {
+                        // Extract text content using the nested span structure
+                        const textSpan = span.querySelector('span > span > span');
+                        if (textSpan) {
+                            const text = textSpan.textContent.trim();
+                            if (text && text.length > 0) {
+                                allDescriptionParts.push(text);
+                                console.log(`📄 Part ${childIndex}: "${text}"`);
+                            }
+                        }
+                    }
+                });
+                
+                // Combine all parts
+                description = allDescriptionParts.join('').trim();
+                hashtags = allHashtags;
+                
+                console.log(`✅ Final description: "${description}" (${description.length} chars)`);
+                console.log(`✅ Final hashtags: [${hashtags.join(', ')}]`);
+            } else {
+                console.log('❌ Could not find description container with either structure');
             }
             
             // Try to get channel URL from the channel name link
@@ -108,7 +200,23 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
             const channelLink = document.querySelector('#douyin-right-container > div:nth-child(2) > main > div.q3FEUHo1 > div.AaMoWpJs.KVBE0Bw6.hP0cLBah > div.GX8tdEJt > a');
             if (channelLink && channelLink.getAttribute('href')) {
                 const href = channelLink.getAttribute('href');
-                channelUrl = href.startsWith('http') ? href : `https://www.douyin.com${href}`;
+                
+                // Handle different href formats
+                if (href.startsWith('http')) {
+                    // Already a full URL
+                    channelUrl = href;
+                } else if (href.startsWith('//')) {
+                    // Protocol-relative URL
+                    channelUrl = `https:${href}`;
+                } else if (href.startsWith('/')) {
+                    // Relative path starting with /
+                    channelUrl = `https://www.douyin.com${href}`;
+                } else {
+                    // Relative path without leading /
+                    channelUrl = `https://www.douyin.com/${href}`;
+                }
+                
+                console.log(`🔗 Channel URL: ${channelUrl}`);
             }
             
             return {
@@ -116,8 +224,7 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
                 channelUrl: channelUrl,
                 dateTime: dateTime,
                 description: description,
-                hashtags: hashtags,
-                pageTitle: document.title || ''
+                hashtags: hashtags
             };
         });
         
@@ -236,7 +343,8 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
         
         // Create download folder
         const noteId = noteUrl.split('/').pop().split('?')[0];
-        const safeChannelName = videoInfo.channelName.replace(/[^a-zA-Z0-9\-_]/g, '_');
+        // Only replace characters that are actually unsafe for file paths, preserve Chinese characters
+        const safeChannelName = videoInfo.channelName.replace(/[<>:"/\\|?*]/g, '_');
         const downloadFolder = path.join('downloads', safeChannelName, `note_${noteId}`);
         
         if (!fs.existsSync(downloadFolder)) {
@@ -288,11 +396,24 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
         console.log(`❌ Failed downloads: ${downloadedImages.filter(img => !img.downloaded).length}`);
         console.log(`📁 Saved to folder: ${downloadFolder}`);
         
+        // Format current timestamp
+        const formatCurrentDateTime = () => {
+            const now = new Date();
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+            const day = now.getDate().toString().padStart(2, '0');
+            const month = (now.getMonth() + 1).toString().padStart(2, '0');
+            const year = now.getFullYear().toString().slice(-2);
+            
+            return `${hours}:${minutes}:${seconds} ${day}/${month}/${year}`;
+        };
+        
         const results = {
             noteUrl: noteUrl,
             noteId: noteId,
             videoInfo: videoInfo,
-            timestamp: new Date().toISOString(),
+            timestamp: formatCurrentDateTime(),
             method: 'DOM_SELECTOR',
             downloadFolder: downloadFolder,
             images: downloadedImages,
@@ -333,10 +454,19 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
         
     } catch (error) {
         console.log(`❌ Error processing ${noteUrl}:`, error.message);
+        // Format error timestamp
+        const now = new Date();
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const seconds = now.getSeconds().toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const year = now.getFullYear().toString().slice(-2);
+        
         return {
             noteUrl: noteUrl,
             error: error.message,
-            timestamp: new Date().toISOString()
+            timestamp: `${hours}:${minutes}:${seconds} ${day}/${month}/${year}`
         };
     } finally {
         if (page) {
@@ -351,7 +481,7 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
 
 (async () => {
     // 🎯 CONFIGURATION: Specify the file containing note URLs
-    const NOTE_URLS_FILE = 'video_links/Unknown_Channel_notes_2025-08-18T05-07-15-816Z.txt';
+    const NOTE_URLS_FILE = 'video_links/80103618197-于工-装修帮帮忙-22-08-25_15-30-21/notes_links.txt';
     
     // Read note URLs from file
     let noteUrls = [];
@@ -426,7 +556,17 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
         
         // Save master results file
         const masterResults = {
-            timestamp: new Date().toISOString(),
+            timestamp: (() => {
+                const now = new Date();
+                const hours = now.getHours().toString().padStart(2, '0');
+                const minutes = now.getMinutes().toString().padStart(2, '0');
+                const seconds = now.getSeconds().toString().padStart(2, '0');
+                const day = now.getDate().toString().padStart(2, '0');
+                const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                const year = now.getFullYear().toString().slice(-2);
+                
+                return `${hours}:${minutes}:${seconds} ${day}/${month}/${year}`;
+            })(),
             totalNotes: noteUrls.length,
             successful: successful,
             failed: failed,
