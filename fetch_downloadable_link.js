@@ -32,11 +32,14 @@ async function extractVideoData(page) {
         const channelLikes = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.detailPage.W_7gCbBd > div > div.cHwSTMd3 > div.OMAnlCHg > p > span:nth-child(4)');
 
         // Description and hashtags
-        const descriptionContainer = '#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.b3uZicw5.cb5piKg6 > div > h1 > span > span:nth-child(2) > span';
+        const descriptionContainerPrimary = '#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.b3uZicw5.cb5piKg6 > div > h1 > span > span:nth-child(2) > span';
+        const descriptionContainerAlt = '#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.b3uZicw5.cb5piKg6 > div > h1 > span > span:nth-child(1)';
         let description = '';
         const hashtags = [];
-        const root = document.querySelector(descriptionContainer);
-        if (root) {
+        const seenTags = new Set();
+
+        const collectFromRoot = (root) => {
+            if (!root) return;
             const walk = (node) => {
                 if (!node) return;
                 if (node.nodeType === Node.TEXT_NODE) {
@@ -45,14 +48,23 @@ async function extractVideoData(page) {
                 } else if (node.nodeType === Node.ELEMENT_NODE) {
                     if (node.tagName === 'A') {
                         const txt = node.textContent?.trim();
-                        if (txt && txt.startsWith('#')) hashtags.push(txt);
+                        if (txt && txt.startsWith('#') && !seenTags.has(txt)) {
+                            hashtags.push(txt);
+                            seenTags.add(txt);
+                        }
                     }
                     for (const child of node.childNodes) walk(child);
                 }
             };
             walk(root);
-            description = description.trim();
-        }
+        };
+
+        const rootAlt = document.querySelector(descriptionContainerAlt);
+        // Some videos have content under nth-child(1); include it if present
+        collectFromRoot(rootAlt);
+        const rootPrimary = document.querySelector(descriptionContainerPrimary);
+        collectFromRoot(rootPrimary);
+        description = description.trim();
 
         const videoHearts = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.bm6Yr1Fm > div.fN2jqmuV > div:nth-child(1) > span');
         const videoComments = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.bm6Yr1Fm > div.fN2jqmuV > div:nth-child(2) > span');
@@ -192,15 +204,43 @@ async function fetchDownloadableLinks(inputUrl) {
     }
 }
 
+// 📂 Batch mode: read links from file and process sequentially
+async function fetchFromFile(filePath) {
+    if (!fs.existsSync(filePath)) {
+        console.log(`❌ File not found: ${filePath}`);
+        return;
+    }
+    const content = fs.readFileSync(filePath, 'utf8');
+    const urls = content.split('\n')
+        .map(l => l.trim())
+        .filter(l => l && (l.includes('douyin.com') || l.includes('v.douyin.com')));
+    if (urls.length === 0) {
+        console.log('❌ No Douyin links found in file');
+        return;
+    }
+    console.log(`📋 Found ${urls.length} links. Starting batch...`);
+    for (let i = 0; i < urls.length; i++) {
+        console.log(`\n📹 ${i + 1}/${urls.length}`);
+        await fetchDownloadableLinks(urls[i]);
+    }
+    console.log('\n✅ Batch complete');
+}
+
 // 🚀 CLI
 (async () => {
     const args = process.argv.slice(2);
     if (args.length === 0) {
-        console.log('Usage: node fetch_downloadable_link.js <douyin_video_url>');
+        console.log('Usage:');
+        console.log('  node fetch_downloadable_link.js <douyin_video_url>');
+        console.log('  node fetch_downloadable_link.js <path_to_txt_with_links>');
         return;
     }
-    const url = args[0];
-    await fetchDownloadableLinks(url);
+    const input = args[0];
+    if (fs.existsSync(input) && !input.startsWith('http')) {
+        await fetchFromFile(input);
+    } else {
+        await fetchDownloadableLinks(input);
+    }
 })();
 
 
