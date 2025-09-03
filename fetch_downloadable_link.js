@@ -14,6 +14,59 @@ function formatTimestamp() {
     return `${h}:${m}:${s} ${d}/${mo}/${y}`;
 }
 
+// 📊 Extract video and channel data (selectors aligned with batch scripts)
+async function extractVideoData(page) {
+    return await page.evaluate(() => {
+        const getText = (sel) => {
+            const el = document.querySelector(sel);
+            return el ? el.textContent.trim() : '';
+        };
+        const getHref = (sel) => {
+            const el = document.querySelector(sel);
+            return el ? el.href : '';
+        };
+
+        const channelName = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.detailPage.W_7gCbBd > div > div.cHwSTMd3 > div.OMAnlCHg > a > div > span > span > span > span > span > span');
+        const channelLink = getHref('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.detailPage.W_7gCbBd > div > div.cHwSTMd3 > div.OMAnlCHg > a');
+        const channelFollowers = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.detailPage.W_7gCbBd > div > div.cHwSTMd3 > div.OMAnlCHg > p > span:nth-child(2)');
+        const channelLikes = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.detailPage.W_7gCbBd > div > div.cHwSTMd3 > div.OMAnlCHg > p > span:nth-child(4)');
+
+        // Description and hashtags
+        const descriptionContainer = '#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.b3uZicw5.cb5piKg6 > div > h1 > span > span:nth-child(2) > span';
+        let description = '';
+        const hashtags = [];
+        const root = document.querySelector(descriptionContainer);
+        if (root) {
+            const walk = (node) => {
+                if (!node) return;
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const t = node.textContent || '';
+                    description += t;
+                } else if (node.nodeType === Node.ELEMENT_NODE) {
+                    if (node.tagName === 'A') {
+                        const txt = node.textContent?.trim();
+                        if (txt && txt.startsWith('#')) hashtags.push(txt);
+                    }
+                    for (const child of node.childNodes) walk(child);
+                }
+            };
+            walk(root);
+            description = description.trim();
+        }
+
+        const videoHearts = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.bm6Yr1Fm > div.fN2jqmuV > div:nth-child(1) > span');
+        const videoComments = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.bm6Yr1Fm > div.fN2jqmuV > div:nth-child(2) > span');
+        const videoSaved = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.bm6Yr1Fm > div.fN2jqmuV > div:nth-child(3) > span');
+        const videoShares = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.bm6Yr1Fm > div.fN2jqmuV > div.gKdwFjV_.fcEX2ARL > span');
+        const videoDate = getText('#douyin-right-container > div.parent-route-container.route-scroll-container.IhmVuo1S > div > div > div.leftContainer.MRADF45Z > div.sJhfX08v > div > div.bm6Yr1Fm > div.fb3bD1fc > span');
+
+        return {
+            channel: { name: channelName, link: channelLink, followers: channelFollowers, totalLikes: channelLikes },
+            video: { description, hashtags, hearts: videoHearts, comments: videoComments, saved: videoSaved, shares: videoShares, publishDate: videoDate }
+        };
+    });
+}
+
 // 🍪 Load cookies if available
 async function loadCookies(page) {
     if (!fs.existsSync('cookies.json')) return false;
@@ -89,6 +142,9 @@ async function fetchDownloadableLinks(inputUrl) {
         // Wait login popup
         await new Promise(r => setTimeout(r, 4000));
 
+        // Extract channel/video data
+        const extractedData = await extractVideoData(page);
+
         // Open clarity panel and choose highest option if possible
         const btnSelectors = [
             '.xgplayer-playclarity-setting .gear .btn',
@@ -120,6 +176,7 @@ async function fetchDownloadableLinks(inputUrl) {
             videoUrl: finalUrl,
             videoId: videoId,
             fetchTimestamp: formatTimestamp(),
+            extractedData,
             networkCapture: {
                 totalUniqueBitrateRequests: captured.length,
                 bitrates: captured.map(c => c.bitrate),
