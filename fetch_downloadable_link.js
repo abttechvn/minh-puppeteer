@@ -99,56 +99,66 @@ function extractVideoId(url) {
     return m ? m[1] : 'unknown';
 }
 
-// 💾 Save results to downloadable_links/<videoId>.json
-function saveResults(videoId, data) {
-    const dir = path.join('downloadable_links');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, `${videoId}.json`);
+// 📁 Get or create batch folder
+function getBatchFolder() {
+    const timestamp = new Date().toISOString().slice(0,16).replace(/[:T]/g, '').replace('-', '');
+    const batchName = `batch_${timestamp}`;
+    const batchDir = path.join('downloadable_links', batchName);
+    if (!fs.existsSync(batchDir)) fs.mkdirSync(batchDir, { recursive: true });
+    return batchDir;
+}
+
+// 💾 Save results to downloadable_links/batch_YYYYMMDD_HHMM/<videoId>.json
+function saveResults(videoId, data, batchDir) {
+    const file = path.join(batchDir, `${videoId}.json`);
     fs.writeFileSync(file, JSON.stringify(data, null, 2));
     console.log(`💾 Saved: ${file}`);
 }
 
 // 🎯 Fetch downloadable links for a single URL
-async function fetchDownloadableLinks(inputUrl) {
+async function fetchDownloadableLinks(inputUrl, batchDir) {
     console.log(`🔗 Input: ${inputUrl}`);
-    const browser = await puppeteer.launch({
-        headless: false,
-        defaultViewport: { width: 1280, height: 720 },
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-    });
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-    await loadCookies(page);
-
-    // Track unique bitrates
-    const qualityMap = new Map();
-    await page.setRequestInterception(true);
-    page.on('request', (request) => {
-        try {
-            const url = request.url();
-            if (url.includes('v3-dy-o.zjcdn.com')) {
-                const params = new URLSearchParams(url.split('?')[1] || '');
-                const br = params.get('br');
-                if (br && !qualityMap.has(br)) {
-                    qualityMap.set(br, {
-                        bitrate: parseInt(br),
-                        url: url,
-                        timestamp: formatTimestamp()
-                    });
-                    console.log(`📹 Captured br=${br}`);
-                }
-            }
-        } catch (e) {
-            // ignore
-        } finally {
-            try { request.continue(); } catch {}
-        }
-    });
-
+    let videoId = 'unknown';
+    let finalUrl = inputUrl;
+    
     try {
+        const browser = await puppeteer.launch({
+            headless: false,
+            defaultViewport: { width: 1280, height: 720 },
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
+        const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+        await loadCookies(page);
+
+        // Track unique bitrates
+        const qualityMap = new Map();
+        await page.setRequestInterception(true);
+        page.on('request', (request) => {
+            try {
+                const url = request.url();
+                if (url.includes('v3-dy-o.zjcdn.com')) {
+                    const params = new URLSearchParams(url.split('?')[1] || '');
+                    const br = params.get('br');
+                    if (br && !qualityMap.has(br)) {
+                        qualityMap.set(br, {
+                            bitrate: parseInt(br),
+                            url: url,
+                            timestamp: formatTimestamp()
+                        });
+                        console.log(`📹 Captured br=${br}`);
+                    }
+                }
+            } catch (e) {
+                // ignore
+            } finally {
+                try { request.continue(); } catch {}
+            }
+        });
+
         await page.goto(inputUrl, { waitUntil: 'networkidle2', timeout: 120000 });
-        const finalUrl = page.url();
-        const videoId = extractVideoId(finalUrl) || extractVideoId(inputUrl);
+        finalUrl = page.url();
+        videoId = extractVideoId(finalUrl) || extractVideoId(inputUrl);
         console.log(`➡️ Final URL: ${finalUrl}`);
 
         // Wait login popup
@@ -184,25 +194,81 @@ async function fetchDownloadableLinks(inputUrl) {
         await new Promise(r => setTimeout(r, 5000));
 
         const captured = Array.from(qualityMap.values()).sort((a, b) => b.bitrate - a.bitrate);
-        const result = {
-            videoUrl: finalUrl,
-            videoId: videoId,
-            fetchTimestamp: formatTimestamp(),
-            extractedData,
-            networkCapture: {
-                totalUniqueBitrateRequests: captured.length,
-                bitrates: captured.map(c => c.bitrate),
-                capturedRequests: captured
-            }
-        };
-        saveResults(videoId, result);
+        
+        // Categorize result
+        if (captured.length === 0) {
+            // No captures - save partial data and track
+            const result = {
+                videoUrl: finalUrl,
+                videoId: videoId,
+                fetchTimestamp: formatTimestamp(),
+                extractedData,
+                networkCapture: {
+                    totalUniqueBitrateRequests: 0,
+                    bitrates: [],
+                    capturedRequests: []
+                },
+                status: 'no_captures'
+            };
+            saveResults(videoId, result, batchDir);
+            batchResults.noCaptures.push({ videoId, url: finalUrl });
+            console.log(`🚫 No captures for ${videoId}`);
+        } else {
+            // Success - save full data
+            const result = {
+                videoUrl: finalUrl,
+                videoId: videoId,
+                fetchTimestamp: formatTimestamp(),
+                extractedData,
+                networkCapture: {
+                    totalUniqueBitrateRequests: captured.length,
+                    bitrates: captured.map(c => c.bitrate),
+                    capturedRequests: captured
+                },
+                status: 'success'
+            };
+            saveResults(videoId, result, batchDir);
+            batchResults.successful++;
+            console.log(`✅ Success: ${videoId} (${captured.length} qualities)`);
+        }
+        
+        await page.close();
+        await browser.close();
+        
     } catch (e) {
         console.log(`❌ Error: ${e.message}`);
-    } finally {
-        try { await page.close(); } catch {}
-        try { await browser.close(); } catch {}
+        
+        // Track error and save partial data
+        batchResults.errors.push({ url: inputUrl, error: e.message });
+        
+        // Try to save partial data if we have videoId
+        if (videoId !== 'unknown') {
+            const result = {
+                videoUrl: finalUrl,
+                videoId: videoId,
+                fetchTimestamp: formatTimestamp(),
+                extractedData: null,
+                networkCapture: {
+                    totalUniqueBitrateRequests: 0,
+                    bitrates: [],
+                    capturedRequests: []
+                },
+                status: 'error',
+                error: e.message
+            };
+            saveResults(videoId, result, batchDir);
+        }
     }
 }
+
+// 📊 Track batch results
+const batchResults = {
+    total: 0,
+    successful: 0,
+    failed: [],
+    noCaptures: [],
+    errors: []
+};
 
 // 📂 Batch mode: read links from file and process sequentially
 async function fetchFromFile(filePath) {
@@ -218,12 +284,101 @@ async function fetchFromFile(filePath) {
         console.log('❌ No Douyin links found in file');
         return;
     }
+    
+    // Create batch folder
+    const batchDir = getBatchFolder();
+    console.log(`📁 Batch folder: ${batchDir}`);
+    
+    // Reset batch tracking
+    batchResults.total = urls.length;
+    batchResults.successful = 0;
+    batchResults.failed = [];
+    batchResults.noCaptures = [];
+    batchResults.errors = [];
+    
     console.log(`📋 Found ${urls.length} links. Starting batch...`);
     for (let i = 0; i < urls.length; i++) {
         console.log(`\n📹 ${i + 1}/${urls.length}`);
-        await fetchDownloadableLinks(urls[i]);
+        await fetchDownloadableLinks(urls[i], batchDir);
     }
-    console.log('\n✅ Batch complete');
+    
+    // Generate summary report
+    generateBatchReport(filePath, batchDir);
+}
+
+// 📋 Generate detailed batch report
+function generateBatchReport(inputFile, batchDir) {
+    const timestamp = formatTimestamp();
+    const report = {
+        generatedAt: timestamp,
+        inputFile: path.basename(inputFile),
+        batchFolder: path.basename(batchDir),
+        summary: {
+            total: batchResults.total,
+            successful: batchResults.successful,
+            failed: batchResults.failed.length,
+            noCaptures: batchResults.noCaptures.length,
+            errors: batchResults.errors.length
+        },
+        details: {
+            failed: batchResults.failed,
+            noCaptures: batchResults.noCaptures,
+            errors: batchResults.errors
+        }
+    };
+    
+    // Save detailed report inside batch folder
+    const reportPath = path.join(batchDir, `BATCH_REPORT_${Date.now()}.json`);
+    fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+    
+    // Console summary
+    console.log('\n' + '='.repeat(60));
+    console.log('📊 BATCH SUMMARY REPORT');
+    console.log('='.repeat(60));
+    console.log(`📁 Input file: ${path.basename(inputFile)}`);
+    console.log(`⏰ Generated: ${timestamp}`);
+    console.log(`📊 Total processed: ${batchResults.total}`);
+    console.log(`✅ Successful: ${batchResults.successful}`);
+    console.log(`❌ Failed: ${batchResults.failed.length}`);
+    console.log(`🚫 No captures: ${batchResults.noCaptures.length}`);
+    console.log(`💥 Errors: ${batchResults.errors.length}`);
+    
+    if (batchResults.failed.length > 0) {
+        console.log('\n❌ FAILED FILES (need manual download):');
+        batchResults.failed.forEach((item, i) => {
+            console.log(`  ${i + 1}. ${item.videoId} - ${item.url}`);
+        });
+    }
+    
+    if (batchResults.noCaptures.length > 0) {
+        console.log('\n🚫 NO CAPTURES (no downloadable links found):');
+        batchResults.noCaptures.forEach((item, i) => {
+            console.log(`  ${i + 1}. ${item.videoId} - ${item.url}`);
+        });
+    }
+    
+    if (batchResults.errors.length > 0) {
+        console.log('\n💥 ERRORS (processing failed):');
+        batchResults.errors.forEach((item, i) => {
+            console.log(`  ${i + 1}. ${item.url} - ${item.error}`);
+        });
+    }
+    
+    console.log(`\n📄 Detailed report saved: ${reportPath}`);
+    
+    // Create simple text file with failed URLs for manual download
+    if (batchResults.failed.length > 0 || batchResults.noCaptures.length > 0 || batchResults.errors.length > 0) {
+        const failedUrlsPath = path.join(batchDir, `MANUAL_DOWNLOAD_${Date.now()}.txt`);
+        const failedUrls = [
+            ...batchResults.failed.map(item => item.url),
+            ...batchResults.noCaptures.map(item => item.url),
+            ...batchResults.errors.map(item => item.url)
+        ];
+        fs.writeFileSync(failedUrlsPath, failedUrls.join('\n'));
+        console.log(`📝 Manual download URLs saved: ${failedUrlsPath}`);
+    }
+    
+    console.log('='.repeat(60));
 }
 
 // 🚀 CLI
@@ -239,7 +394,10 @@ async function fetchFromFile(filePath) {
     if (fs.existsSync(input) && !input.startsWith('http')) {
         await fetchFromFile(input);
     } else {
-        await fetchDownloadableLinks(input);
+        // Single URL - create batch folder for consistency
+        const batchDir = getBatchFolder();
+        console.log(`📁 Batch folder: ${batchDir}`);
+        await fetchDownloadableLinks(input, batchDir);
     }
 })();
 
