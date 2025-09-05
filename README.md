@@ -49,8 +49,10 @@ A comprehensive collection of Node.js scripts for automating Douyin (TikTok Chin
 | Script | Purpose | Input | Output |
 |--------|---------|-------|--------|
 | `fetch_video_links.js` | Extract URLs and channel data | Channel URL | Comprehensive channel data + URL lists |
+| `fetch_downloadable_link.js` | Fetch downloadable video links + metadata | Video URLs | JSON files with download links |
+| `download_videos.js` | Download highest quality videos | JSON files | MP4 videos (highest quality) |
 | `picture.js` | Download images from notes | Note URLs | PNG images |
-| `video.js` | Download videos | Video URLs | MP4 videos (multiple qualities) |
+| `video.js` | Download videos (legacy) | Video URLs | MP4 videos (multiple qualities) |
 | `index.js` | Extract URLs (alternative method) | Channel URL | Array of URLs |
 
 ## 🚀 Getting Started
@@ -77,12 +79,9 @@ A comprehensive collection of Node.js scripts for automating Douyin (TikTok Chin
 ]
 ```
 
-### Step 2: Configure Channel URLs
+### Step 2: Run the Scripts
 
-Update the channel URLs in the scripts with your target Douyin user:
-```javascript
-const CHANNEL_URL = 'https://www.douyin.com/user/YOUR_USER_ID';
-```
+No configuration needed! Just run the scripts with your Douyin URLs as command line arguments.
 
 ## 📖 Detailed Usage
 
@@ -91,7 +90,14 @@ const CHANNEL_URL = 'https://www.douyin.com/user/YOUR_USER_ID';
 **Use `fetch_video_links.js` to get comprehensive channel information:**
 
 ```bash
-node fetch_video_links.js
+# Basic usage
+node fetch_video_links.js "https://www.douyin.com/user/YOUR_USER_ID"
+
+# Headless mode (runs in background)
+node fetch_video_links.js "https://www.douyin.com/user/YOUR_USER_ID" --headless
+
+# Custom scroll attempts
+node fetch_video_links.js "https://www.douyin.com/user/YOUR_USER_ID" --max-scrolls 10
 ```
 
 **What it does:**
@@ -105,7 +111,7 @@ node fetch_video_links.js
 **New folder structure:**
 ```
 video_links/
-└── {ChannelID}-{ChannelName}-{dd-mm-yy}_{HH-MM-SS}/
+└── {ChannelID}-{dd-mm-yy}_{HH-MM-SS}/
     ├── channel_info.json          # Channel metadata
     ├── complete_results.json      # Full extraction results
     ├── notes_links.txt           # Note URLs only
@@ -132,19 +138,86 @@ video_links/
 
 **Use `picture.js` to download images from note posts:**
 
-1. **Update the file path** in `picture.js`:
-   ```javascript
-   const NOTE_URLS_FILE = 'video_links/YGG_313-耙耳朵羊锅锅-21-08-25_15-52-57/notes_links.txt';
-   ```
+```bash
+# Specify file path directly
+node picture.js "video_links/YGG_313-22-08-25_15-50-27/notes_links.txt"
 
-2. **Run the script:**
+# Headless mode (runs in background)
+node picture.js "video_links/YGG_313-22-08-25_15-50-27/notes_links.txt" --headless
+
+# Interactive mode (choose from available files)
+node picture.js --interactive
+```
+
+### 3. 🔗 Fetch Downloadable Video Links
+
+**Use `fetch_downloadable_link.js` to get downloadable video links and metadata:**
+
+1. **Single video:**
    ```bash
-   node picture.js
+   node fetch_downloadable_link.js "https://v.douyin.com/dG2VJsZMMz4/"
    ```
 
-### 3. 🎥 Download Videos
+2. **Batch processing from file:**
+   ```bash
+   node fetch_downloadable_link.js --file video_links/testinglinks/videos_links.txt
+   ```
 
-**Use `video.js` to download videos:**
+**What it does:**
+- **🔐 Uses cookies** for authenticated access
+- **🎯 Quality interaction** - automatically selects highest quality
+- **📊 Rich metadata extraction** - channel info, video stats, description, hashtags
+- **🔗 Network interception** - captures actual download links from CDN
+- **📁 Batch organization** - saves results in `downloadable_links/batch_ddmmyy_hhmmss/`
+- **📋 Detailed reporting** - tracks successful/failed extractions
+
+**Output structure:**
+```
+downloadable_links/
+└── batch_030925_140000/          # batch_ddmmyy_hhmmss format
+    ├── 7397730142237265167.json  # Video metadata + download links
+    ├── 7486798005652163899.json
+    ├── BATCH_REPORT_1693755025000.json  # Batch summary
+    └── MANUAL_DOWNLOAD_1693755025000.txt  # Failed URLs for manual download
+```
+
+### 4. 🎥 Download Videos
+
+**Use `download_videos.js` to download the highest quality videos:**
+
+1. **From specific batch folder:**
+   ```bash
+   node download_videos.js --batch downloadable_links/batch_030925_140000
+   ```
+
+2. **Auto-discover latest batch:**
+   ```bash
+   node download_videos.js
+   ```
+
+**What it does:**
+- **🎯 Highest quality selection** - automatically picks best bitrate
+- **📁 Organized downloads** - creates `downloads/batch_ddmmyy_hhmmss/channelName_videoId/`
+- **🔄 Resume support** - skips already downloaded videos
+- **⚡ Concurrency** - processes multiple videos simultaneously
+- **📊 Progress tracking** - detailed download statistics
+
+**Output structure:**
+```
+downloads/
+└── batch_030925_140000/          # batch_ddmmyy_hhmmss format
+    ├── 天门装修设计_7396616001472728320/
+    │   ├── video_highest.mp4
+    │   ├── metadata.json
+    │   └── download_log.json
+    └── 于工-装修帮帮忙_7398843004938718516/
+        ├── video_highest.mp4
+        └── metadata.json
+```
+
+### 5. 🎥 Download Videos (Legacy)
+
+**Use `video.js` for multiple quality downloads:**
 
 1. **Update the video URLs** in `video.js`:
    ```javascript
@@ -170,9 +243,10 @@ The `picture.js` script downloads images from Douyin note posts using advanced D
 #### **Step-by-Step Process:**
 
 1. **Input Processing & Validation**
-   - Reads note URLs from text file (generated by `fetch_video_links.js`)
-   - Validates and filters URLs to ensure they're valid Douyin note links
-   - Processes multiple notes sequentially with respectful delays
+   - **Flexible file input**: Accepts file path via command line or `--interactive` mode
+   - **Auto-discovery**: Finds available `notes_links.txt` files automatically
+   - **URL validation**: Validates and filters URLs to ensure they're valid Douyin note links
+   - **Batch processing**: Processes multiple notes sequentially with respectful delays
 
 2. **Page Navigation & Authentication**
    - Loads existing cookies from `cookies.json` for authenticated access
@@ -199,6 +273,7 @@ The `picture.js` script downloads images from Douyin note posts using advanced D
    - **Format Standardization**: Converts all images to PNG format for consistency
    - **Error Handling**: Tracks success/failure for each image download
    - **Metadata Preservation**: Saves complete extraction results in JSON format
+   - **Headless Support**: Optional `--headless` mode for background processing
 
 #### **Output Structure:**
 ```
@@ -216,6 +291,8 @@ downloads/
 - **Quality Preservation**: Maintains original image resolution
 - **Batch Processing**: Handles multiple notes efficiently
 - **Comprehensive Logging**: Detailed progress and error reporting
+- **Flexible Input**: Command-line file specification or interactive mode
+- **Multi-user Support**: No hardcoded paths, works for all users
 
 ---
 
@@ -306,6 +383,14 @@ downloads/
 
 ### 💡 **Integration Workflow:**
 
+#### **Modern Workflow (Recommended):**
+1. **Extract URLs**: Use `fetch_video_links.js` to get note and video URLs
+2. **Fetch Download Links**: Use `fetch_downloadable_link.js` to get downloadable video links + metadata
+3. **Download Videos**: Use `download_videos.js` to download highest quality videos
+4. **Download Images**: Use `picture.js` with the generated `notes_links.txt`
+5. **Organized Output**: All content organized by batch with comprehensive metadata
+
+#### **Legacy Workflow:**
 1. **Extract URLs**: Use `fetch_video_links.js` to get note and video URLs
 2. **Download Images**: Use `picture.js` with the generated `notes_links.txt`
 3. **Download Videos**: Use `video.js` with the generated `videos_links.txt` or direct URLs
@@ -315,19 +400,32 @@ downloads/
 
 ```
 douyin-automation/
-├── fetch_video_links.js       # Main extraction script
-├── picture.js                 # Image downloader
-├── video.js                   # Video downloader
-├── index.js                   # Alternative URL extractor
-├── cookies.json               # Your Douyin session cookies
-├── package.json               # Dependencies
-├── README.md                  # This file
-└── video_links/               # Output directory
-    └── {ChannelID}-{ChannelName}-{timestamp}/
-        ├── channel_info.json
-        ├── complete_results.json
-        ├── notes_links.txt
-        └── videos_links.txt
+├── fetch_video_links.js           # Channel data + URL extraction
+├── fetch_downloadable_link.js     # Video metadata + download links
+├── download_videos.js             # Video downloader (highest quality)
+├── picture.js                     # Image downloader
+├── video.js                       # Video downloader (legacy)
+├── index.js                       # Alternative URL extractor
+├── cookies.json                   # Your Douyin session cookies
+├── package.json                   # Dependencies
+├── README.md                      # This file
+├── video_links/                   # Channel extraction output
+│   └── {ChannelID}-{dd-mm-yy}_{HH-MM-SS}/
+│       ├── channel_info.json
+│       ├── complete_results.json
+│       ├── notes_links.txt
+│       └── videos_links.txt
+├── downloadable_links/            # Video metadata + download links
+│   └── batch_ddmmyy_hhmmss/       # batch_030925_140000 format
+│       ├── {videoId}.json
+│       ├── BATCH_REPORT_*.json
+│       └── MANUAL_DOWNLOAD_*.txt
+└── downloads/                     # Downloaded videos
+    └── batch_ddmmyy_hhmmss/       # batch_030925_140000 format
+        └── {channelName}_{videoId}/
+            ├── video_highest.mp4
+            ├── metadata.json
+            └── download_log.json
 ```
 
 ## 🔧 Troubleshooting
@@ -371,6 +469,8 @@ douyin-automation/
 - **Use fresh URLs**: Extract URLs before downloading for best success rates
 - **Monitor file sizes**: Large videos may take time to download
 - **Check output quality**: Videos are available in multiple formats
+- **Batch processing**: Use `fetch_downloadable_link.js` + `download_videos.js` for large batches
+- **Resume capability**: `download_videos.js` automatically skips already downloaded videos
 
 ### General
 
