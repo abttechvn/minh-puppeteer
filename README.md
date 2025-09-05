@@ -2,6 +2,40 @@
 
 A comprehensive collection of Node.js scripts for automating Douyin (TikTok China) content extraction and downloading using Puppeteer.
 
+## ⚡ Quick Setup
+
+### Windows
+1. Download Node.js from [nodejs.org](https://nodejs.org/)
+2. Double-click `setup.bat`
+3. Follow the on-screen instructions
+
+### Mac/Linux
+1. Install Node.js: `brew install node` (macOS) or `sudo apt install nodejs npm` (Ubuntu)
+2. Run: `chmod +x setup.sh && ./setup.sh`
+3. Follow the on-screen instructions
+
+### Manual Setup
+```bash
+npm install
+node setup.js
+```
+
+## 🚀 Quick Commands
+
+```bash
+# Extract channel data
+npm run extract "https://www.douyin.com/user/YOUR_USER_ID"
+
+# Download images
+npm run download-images --interactive
+
+# Fetch video links
+npm run fetch-links --interactive
+
+# Download videos
+npm run download-videos
+```
+
 ## 📋 Table of Contents
 
 - [Features](#features)

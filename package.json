@@ -1,16 +1,41 @@
 {
-  "name": "puppeteer",
+  "name": "douyin-automation-suite",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "A comprehensive Douyin automation suite for extracting and downloading videos, images, and metadata",
+  "main": "fetch_video_links.js",
   "scripts": {
+    "start": "node fetch_video_links.js",
+    "extract": "node fetch_video_links.js",
+    "fetch-links": "node fetch_downloadable_link.js",
+    "download-videos": "node download_videos.js",
+    "download-images": "node picture.js",
+    "setup": "node setup.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": [
+    "douyin",
+    "tiktok",
+    "automation",
+    "puppeteer",
+    "scraping",
+    "video-downloader",
+    "image-downloader"
+  ],
+  "author": "Douyin Automation Suite",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
   "dependencies": {
-    "express": "^5.1.0",
-    "multer": "^2.0.2",
     "puppeteer": "^24.12.1"
-  }
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "local"
+  },
+  "bugs": {
+    "url": "local"
+  },
+  "homepage": "local"
 }
