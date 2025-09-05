@@ -165,21 +165,21 @@ async function fetchVideoLinks(channelUrl, options = {}) {
             } else {
                 // Fallback selectors if the specific one doesn't work
                 const fallbackSelectors = [
-                    '[data-e2e="user-title"]',
-                    '.username',
-                    '.user-name',
-                    'h1',
-                    '.profile-name',
-                    '.user-detail .name'
-                ];
-                
+                '[data-e2e="user-title"]',
+                '.username',
+                '.user-name',
+                'h1',
+                '.profile-name',
+                '.user-detail .name'
+            ];
+            
                 for (const selector of fallbackSelectors) {
-                    const element = document.querySelector(selector);
-                    if (element && element.textContent.trim()) {
-                        channelName = element.textContent.trim();
-                        break;
-                    }
+                const element = document.querySelector(selector);
+                if (element && element.textContent.trim()) {
+                    channelName = element.textContent.trim();
+                    break;
                 }
+            }
             }
             
             // Extract the Douyin-assigned channel ID using the specific selector
@@ -350,7 +350,7 @@ async function fetchVideoLinks(channelUrl, options = {}) {
                         !fullText.includes('...更多') && 
                         !fullText.includes('...')) {
                         allDescriptionText = fullText;
-                        break;
+                    break;
                     }
                 }
             }
@@ -550,7 +550,7 @@ async function fetchVideoLinks(channelUrl, options = {}) {
             }
         };
         
-        // Create folder structure: video_links -> <channel ID>-<channel name>-<date in dd/mm/yy>-<time>
+        // Create folder structure: video_links -> <channel ID>-<date in dd/mm/yy>-<time>
         const baseFolder = 'video_links';
         if (!fs.existsSync(baseFolder)) {
             fs.mkdirSync(baseFolder, { recursive: true });
@@ -560,8 +560,8 @@ async function fetchVideoLinks(channelUrl, options = {}) {
         const safeChannelName = channelInfo.channelName;
         const safeChannelId = channelInfo.channelId;
         
-        // Create the specific folder for this channel and date/time using hyphens
-        const channelFolder = path.join(baseFolder, `${safeChannelId}-${safeChannelName}-${dateTimeFormatted}`);
+        // Create the specific folder for this channel and date/time using hyphens (without channel name)
+        const channelFolder = path.join(baseFolder, `${safeChannelId}-${dateTimeFormatted}`);
         if (!fs.existsSync(channelFolder)) {
             fs.mkdirSync(channelFolder, { recursive: true });
         }
@@ -640,20 +640,48 @@ async function fetchVideoLinks(channelUrl, options = {}) {
     }
 }
 
-// Example usage
+// 🚀 CLI Interface
 (async () => {
-    // 🎯 CONFIGURATION: Add your channel URL here
-    const CHANNEL_URL = 'https://www.douyin.com/user/MS4wLjABAAAAURQfB8k2J9F79FjWSx1eYlarHl1HTldY8Oxp7OSeJfKAn9cXj6fYIqWheS7X13Bn';
+    const args = process.argv.slice(2);
     
+    if (args.length === 0) {
+        console.log('Usage:');
+        console.log('  node fetch_video_links.js <douyin_channel_url>');
+        console.log('  node fetch_video_links.js <douyin_channel_url> --headless');
+        console.log('  node fetch_video_links.js <douyin_channel_url> --max-scrolls 5');
+        console.log('');
+        console.log('Examples:');
+        console.log('  node fetch_video_links.js "https://www.douyin.com/user/MS4wLjABAAAAURQfB8k2J9F79FjWSx1eYlarHl1HTldY8Oxp7OSeJfKAn9cXj6fYIqWheS7X13Bn"');
+        console.log('  node fetch_video_links.js "https://www.douyin.com/user/YOUR_USER_ID" --headless');
+        console.log('  node fetch_video_links.js "https://www.douyin.com/user/YOUR_USER_ID" --max-scrolls 10');
+        return;
+    }
+    
+    const channelUrl = args[0];
+    
+    // Parse command line options
     const options = {
-        headless: false,        // Set to true to run in background
-        maxSameCount: 3         // Stop after 3 scroll attempts with same count
+        headless: args.includes('--headless'),
+        maxSameCount: 3  // Default value
     };
+    
+    // Check for custom max scrolls
+    const maxScrollsIndex = args.indexOf('--max-scrolls');
+    if (maxScrollsIndex !== -1 && args[maxScrollsIndex + 1]) {
+        const maxScrolls = parseInt(args[maxScrollsIndex + 1]);
+        if (!isNaN(maxScrolls) && maxScrolls > 0) {
+            options.maxSameCount = maxScrolls;
+        }
+    }
     
     console.log('🚀 Starting Douyin Video Link Extraction...');
     console.log('===========================================');
+    console.log('Channel URL:', channelUrl);
+    console.log('Headless mode:', options.headless ? 'Yes' : 'No');
+    console.log('Max scroll attempts:', options.maxSameCount);
+    console.log('');
     
-    const results = await fetchVideoLinks(CHANNEL_URL, options);
+    const results = await fetchVideoLinks(channelUrl, options);
     
     if (results.error) {
         console.log('❌ Extraction failed:', results.error);
