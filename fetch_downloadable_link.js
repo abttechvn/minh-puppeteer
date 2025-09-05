@@ -101,14 +101,21 @@ function extractVideoId(url) {
 
 // 📁 Get or create batch folder
 function getBatchFolder() {
-    const timestamp = new Date().toISOString().slice(0,16).replace(/[:T]/g, '').replace('-', '');
-    const batchName = `batch_${timestamp}`;
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = String(now.getFullYear()).slice(-2);
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    
+    const batchName = `batch_${day}${month}${year}_${hours}${minutes}${seconds}`;
     const batchDir = path.join('downloadable_links', batchName);
     if (!fs.existsSync(batchDir)) fs.mkdirSync(batchDir, { recursive: true });
     return batchDir;
 }
 
-// 💾 Save results to downloadable_links/batch_YYYYMMDD_HHMM/<videoId>.json
+// 💾 Save results to downloadable_links/batch_ddmmyy_hhmmss/<videoId>.json
 function saveResults(videoId, data, batchDir) {
     const file = path.join(batchDir, `${videoId}.json`);
     fs.writeFileSync(file, JSON.stringify(data, null, 2));
