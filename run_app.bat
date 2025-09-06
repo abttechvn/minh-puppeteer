@@ -72,7 +72,7 @@ cls
 echo Enter the path to videos_links.txt (drag-and-drop file here works) and press Enter:
 set /p VIDEO_FILE=
 if "%VIDEO_FILE%"=="" goto menu
-node fetch_downloadable_link.js --file "%VIDEO_FILE%"
+node fetch_downloadable_link.js "%VIDEO_FILE%"
 echo.
 pause
 goto menu
