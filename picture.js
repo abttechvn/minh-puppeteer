@@ -47,6 +47,27 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
         
         // Wait for content to load
         await new Promise(r => setTimeout(r, 5000));
+
+        // Try to dismiss login requirement if it appears (non-blocking)
+        try {
+            const closeSelector = '#douyin_login_comp_tab_panel > div > div.E5bLyeP5 > div.G2Uw7cmW > svg > rect';
+            const hasClose = await page.$(closeSelector);
+            if (hasClose) {
+                await page.click(closeSelector, { delay: 20 });
+                console.log('🔐 Dismissed login prompt');
+                await new Promise(r => setTimeout(r, 500));
+            } else {
+                const altCloseSelector = '#douyin_login_comp_tab_panel svg rect';
+                const altHasClose = await page.$(altCloseSelector);
+                if (altHasClose) {
+                    await page.click(altCloseSelector, { delay: 20 });
+                    console.log('🔐 Dismissed login prompt (alt)');
+                    await new Promise(r => setTimeout(r, 500));
+                }
+            }
+        } catch (e) {
+            console.log('ℹ️ No login prompt to dismiss or click failed');
+        }
         
         // Extract video information with improved selectors
         console.log('📝 Extracting video information...');
