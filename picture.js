@@ -341,11 +341,26 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
         
         console.log('📊 Page structure:', pageInfo);
         
-        // Create download folder
+        // Create batch folder for notes (only once per script run)
+        if (!global.noteBatchDir) {
+            const now = new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const year = String(now.getFullYear()).slice(-2);
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            
+            const batchName = `batch_note_${day}${month}${year}_${hours}${minutes}${seconds}`;
+            global.noteBatchDir = path.join('downloads', batchName);
+            if (!fs.existsSync(global.noteBatchDir)) fs.mkdirSync(global.noteBatchDir, { recursive: true });
+            console.log(`📁 Created batch folder: ${global.noteBatchDir}`);
+        }
+        
+        // Create download folder within batch
         const noteId = noteUrl.split('/').pop().split('?')[0];
-        // Only replace characters that are actually unsafe for file paths, preserve Chinese characters
         const safeChannelName = videoInfo.channelName.replace(/[<>:"/\\|?*]/g, '_');
-        const downloadFolder = path.join('downloads', safeChannelName, `note_${noteId}`);
+        const downloadFolder = path.join(global.noteBatchDir, `${safeChannelName}_${noteId}`);
         
         if (!fs.existsSync(downloadFolder)) {
             fs.mkdirSync(downloadFolder, { recursive: true });
@@ -479,31 +494,67 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
     }
 }
 
+// 🚀 CLI Interface
 (async () => {
-    // 🎯 CONFIGURATION: Specify the file containing note URLs
-    const NOTE_URLS_FILE = 'video_links/80103618197-于工-装修帮帮忙-22-08-25_15-30-21/notes_links.txt';
+    const args = process.argv.slice(2);
+    if (args.length === 0) {
+        console.log('📸 Douyin Note Picture Downloader');
+        console.log('==================================');
+        console.log('');
+        console.log('Usage:');
+        console.log('  node picture.js <notes_links_file>');
+        console.log('  node picture.js --interactive');
+        console.log('');
+        console.log('Examples:');
+        console.log('  node picture.js video_links/channel_folder/notes_links.txt');
+        console.log('  node picture.js --interactive');
+        console.log('');
+        console.log('File format (one URL per line):');
+        console.log('https://www.douyin.com/note/7336813471981440296');
+        console.log('https://www.douyin.com/note/7332399367321636123');
+        return;
+    }
+    
+    let noteUrlsFile;
+    if (args[0] === '--interactive') {
+        // Interactive file selection
+        const readline = require('readline');
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
+        
+        noteUrlsFile = await new Promise((resolve) => {
+            rl.question('Enter path to notes_links.txt file: ', (answer) => {
+                rl.close();
+                resolve(answer.trim());
+            });
+        });
+    } else {
+        noteUrlsFile = args[0];
+    }
     
     // Read note URLs from file
     let noteUrls = [];
     try {
-        if (fs.existsSync(NOTE_URLS_FILE)) {
-            const fileContent = fs.readFileSync(NOTE_URLS_FILE, 'utf8');
+        if (fs.existsSync(noteUrlsFile)) {
+            const fileContent = fs.readFileSync(noteUrlsFile, 'utf8');
             noteUrls = fileContent
                 .split('\n')
                 .map(url => url.trim())
                 .filter(url => url && url.startsWith('http')); // Only keep valid URLs
             
-            console.log(`✅ Loaded ${noteUrls.length} note URLs from ${NOTE_URLS_FILE}`);
+            console.log(`✅ Loaded ${noteUrls.length} note URLs from ${noteUrlsFile}`);
         } else {
-            console.log(`❌ File not found: ${NOTE_URLS_FILE}`);
-            console.log('Please create the file or update the NOTE_URLS_FILE path.');
+            console.log(`❌ File not found: ${noteUrlsFile}`);
+            console.log('Please create the file or check the path.');
             console.log('Example file content (one URL per line):');
             console.log('https://www.douyin.com/note/7336813471981440296');
             console.log('https://www.douyin.com/note/7332399367321636123');
             return;
         }
     } catch (error) {
-        console.log(`❌ Error reading file ${NOTE_URLS_FILE}:`, error.message);
+        console.log(`❌ Error reading file ${noteUrlsFile}:`, error.message);
         return;
     }
     
