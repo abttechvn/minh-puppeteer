@@ -378,10 +378,9 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
             console.log(`📁 Created batch folder: ${global.noteBatchDir}`);
         }
         
-        // Create download folder within batch
-        const noteId = noteUrl.split('/').pop().split('?')[0];
-        const safeChannelName = videoInfo.channelName.replace(/[<>:"/\\|?*]/g, '_');
-        const downloadFolder = path.join(global.noteBatchDir, `${safeChannelName}_${noteId}`);
+        // Create download folder within batch (using sequential numbering)
+        const folderName = String(urlIndex + 1);
+        const downloadFolder = path.join(global.noteBatchDir, folderName);
         
         if (!fs.existsSync(downloadFolder)) {
             fs.mkdirSync(downloadFolder, { recursive: true });
@@ -395,9 +394,9 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
         const downloadedImages = [];
         for (let i = 0; i < allImages.length; i++) {
             const img = allImages[i];
-            // Always save as PNG format
-            const imageExtension = '.png';
-            const filename = `image_${i + 1}${imageExtension}`;
+            // Always save as JPG format with simple numbering
+            const imageExtension = '.jpg';
+            const filename = `${i + 1}${imageExtension}`;
             const filepath = path.join(downloadFolder, filename);
             
             console.log(`📥 Downloading ${i + 1}/${allImages.length}: ${filename}`);
@@ -600,11 +599,6 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
             const result = await processNoteVideo(browser, noteUrls[i], i, noteUrls.length);
             allResults.push(result);
             
-            // Add delay between processing to be respectful
-            if (i < noteUrls.length - 1) {
-                console.log('⏳ Waiting 3 seconds before next note...');
-                await new Promise(r => setTimeout(r, 3000));
-            }
         }
         
         // Final summary
