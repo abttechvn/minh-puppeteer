@@ -2,6 +2,69 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 
+async function tryDismissCaptcha(page) {
+    try {
+        const checkGone = async () => {
+            try {
+                const box = await page.$('#vc_captcha_box');
+                if (!box) return true;
+                const visible = await page.evaluate(el => {
+                    const style = window.getComputedStyle(el);
+                    return !(style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0');
+                }, box).catch(() => false);
+                return !visible;
+            } catch (_) { return true; }
+        };
+
+        const clickElement = async (ctx, sel) => {
+            try {
+                const handle = await ctx.$(sel);
+                if (!handle) return false;
+                await handle.evaluate(el => el.click());
+                await new Promise(r => setTimeout(r, 400));
+                return await checkGone();
+            } catch (_) {
+                return false;
+            }
+        };
+
+        const contexts = [page, ...page.frames()];
+        const selectors = [
+            '#vc_captcha_box .vc-captcha-close-btn.captcha_verify_bar--close',
+            '#vc_captcha_box .vc-captcha-close-btn',
+            '#vc_captcha_box > div > div > div.vc-captcha-close-btn.captcha_verify_bar--close > svg > path',
+            '#vc_captcha_box > div > div > div.vc-captcha-close-btn.captcha_verify_bar--close > svg > rect',
+            '#vc_captcha_box > div > div > div.vc-captcha-close-btn.captcha_verify_bar--close > svg'
+        ];
+
+        for (const ctx of contexts) {
+            for (const sel of selectors) {
+                const ok = await clickElement(ctx, sel);
+                if (ok) {
+                    console.log('🧩 Captcha dismissed using selector:', sel);
+                    return true;
+                }
+            }
+        }
+
+        // Fallback: press Escape
+        try {
+            await page.keyboard.press('Escape');
+            await new Promise(r => setTimeout(r, 400));
+            if (await checkGone()) {
+                console.log('🧩 Captcha dismissed using Escape key');
+                return true;
+            }
+        } catch (_) {}
+
+        console.log('🧩 Captcha still present after attempts');
+        return false;
+    } catch (e) {
+        console.log('🧩 Captcha dismissal error:', e.message);
+        return false;
+    }
+}
+
 async function downloadImage(url, filepath) {
     try {
         const response = await fetch(url);
@@ -54,6 +117,9 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1, f
         
         // Wait for content to load
         await new Promise(r => setTimeout(r, 5000));
+
+        // Try to dismiss captcha if present (before login prompt)
+        await tryDismissCaptcha(page);
 
         // Try to dismiss login requirement if it appears (non-blocking)
         try {
