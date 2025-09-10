@@ -17,7 +17,7 @@ async function downloadImage(url, filepath) {
     }
 }
 
-async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
+async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1, folderNameOverride = null) {
     console.log(`\n🎬 Processing Note ${urlIndex + 1}/${totalUrls}`);
     console.log('='.repeat(50));
     console.log('Note URL:', noteUrl);
@@ -41,6 +41,13 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
             console.log(`✅ Loaded ${cookies.length} cookies`);
         }
         
+        // Extract noteId from URL if possible
+        let noteId = '';
+        try {
+            const m = noteUrl.match(/\/note\/(\d+)/);
+            if (m) noteId = m[1];
+        } catch (_) {}
+
         // Navigate to note
         console.log('🔍 Loading note page...');
         await page.goto(noteUrl, { waitUntil: 'networkidle2', timeout: 60000 });
@@ -378,8 +385,10 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
             console.log(`📁 Created batch folder: ${global.noteBatchDir}`);
         }
         
-        // Create download folder within batch (using sequential numbering)
-        const folderName = String(urlIndex + 1);
+        // Create download folder within batch (using provided number or sequential numbering)
+        const folderName = folderNameOverride && String(folderNameOverride).trim() !== ''
+            ? String(folderNameOverride).trim()
+            : String(urlIndex + 1);
         const downloadFolder = path.join(global.noteBatchDir, folderName);
         
         if (!fs.existsSync(downloadFolder)) {
@@ -555,16 +564,33 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
     }
     
     // Read note URLs from file
-    let noteUrls = [];
+    let noteEntries = [];
     try {
         if (fs.existsSync(noteUrlsFile)) {
             const fileContent = fs.readFileSync(noteUrlsFile, 'utf8');
-            noteUrls = fileContent
-                .split('\n')
-                .map(url => url.trim())
-                .filter(url => url && url.startsWith('http')); // Only keep valid URLs
-            
-            console.log(`✅ Loaded ${noteUrls.length} note URLs from ${noteUrlsFile}`);
+            const lines = fileContent.split('\n');
+            const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/i;
+            const trailingNumberRegex = /([\t\s]+)(\d{1,})\s*$/;
+
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+                if (!line) continue;
+
+                const urlMatch = line.match(urlRegex);
+                if (!urlMatch) continue;
+
+                const url = urlMatch[0];
+
+                let folderOverride = null;
+                const numMatch = line.match(trailingNumberRegex);
+                if (numMatch && numMatch[2]) {
+                    folderOverride = numMatch[2];
+                }
+
+                noteEntries.push({ url, folder: folderOverride });
+            }
+
+            console.log(`✅ Loaded ${noteEntries.length} note URLs from ${noteUrlsFile}`);
         } else {
             console.log(`❌ File not found: ${noteUrlsFile}`);
             console.log('Please create the file or check the path.');
@@ -578,14 +604,14 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
         return;
     }
     
-    if (noteUrls.length === 0) {
+    if (noteEntries.length === 0) {
         console.log('❌ No valid note URLs found in the file.');
         return;
     }
     
     console.log('🚀 Multi-Note Picture Downloader');
     console.log('================================');
-    console.log(`📋 Total notes to process: ${noteUrls.length}`);
+    console.log(`📋 Total notes to process: ${noteEntries.length}`);
     
     const browser = await puppeteer.launch({ 
         headless: false,
@@ -595,8 +621,9 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
     const allResults = [];
     
     try {
-        for (let i = 0; i < noteUrls.length; i++) {
-            const result = await processNoteVideo(browser, noteUrls[i], i, noteUrls.length);
+        for (let i = 0; i < noteEntries.length; i++) {
+            const { url, folder } = noteEntries[i];
+            const result = await processNoteVideo(browser, url, i, noteEntries.length, folder);
             allResults.push(result);
             
         }
@@ -609,8 +636,8 @@ async function processNoteVideo(browser, noteUrl, urlIndex = 0, totalUrls = 1) {
         const failed = allResults.filter(r => r.error).length;
         const totalImages = allResults.reduce((sum, r) => sum + (r.summary?.downloaded || 0), 0);
         
-        console.log(`✅ Successfully processed: ${successful}/${noteUrls.length} notes`);
-        console.log(`❌ Failed: ${failed}/${noteUrls.length} notes`);
+        console.log(`✅ Successfully processed: ${successful}/${noteEntries.length} notes`);
+        console.log(`❌ Failed: ${failed}/${noteEntries.length} notes`);
         console.log(`📸 Total images downloaded: ${totalImages}`);
         
         if (failed > 0) {
